@@ -31,7 +31,7 @@ mod appchain {
         output_process, output_process::{MessageToStarknet, MessageToAppchain},
     };
     use piltover::fact_registry::{IFactRegistryDispatcher, IFactRegistryDispatcherTrait};
-    use piltover::snos_output::ProgramOutput;
+    use piltover::snos_output::StarknetOsOutput;
     use piltover::snos_output;
     use piltover::state::component::state_cpt::HasComponent;
     use piltover::state::{state_cpt, state_cpt::InternalTrait as StateInternal, IState};
@@ -133,18 +133,7 @@ mod appchain {
 
             let output_hash = poseidon_hash_span(program_output);
 
-            // Cairo 1 program padds the output with len and 0.
-            // Passing it here to keep compatibility with the fact calculation.
-            let _ = program_output.pop_front();
-            let _ = program_output.pop_front();
-
-            // Header size + 2 messages segments len.
-            assert(
-                program_output.len() >= snos_output::HEADER_SIZE + 2,
-                errors::SNOS_INVALID_PROGRAM_OUTPUT_SIZE
-            );
-
-            let (current_program_hash, current_config_hash): (felt252, felt252) = self
+            let (current_program_hash, _): (felt252, felt252) = self
                 .config
                 .program_info
                 .read();
@@ -156,13 +145,9 @@ mod appchain {
                 program_output, data_availability_fact
             );
 
-            let mut program_output_mut = program_output;
-            let program_output_struct: ProgramOutput = Serde::deserialize(ref program_output_mut)
+            let mut stripped_output = program_output.slice(1,program_output.len()/2);
+            let program_output_struct: StarknetOsOutput = Serde::deserialize(ref stripped_output)
                 .unwrap();
-            assert(
-                program_output_struct.config_hash == current_config_hash,
-                errors::SNOS_INVALID_CONFIG_HASH
-            );
 
             let fact = poseidon_hash_span(array![current_program_hash, output_hash].span());
 
@@ -177,20 +162,6 @@ mod appchain {
             // Perform state update
             self.state.update(program_output);
 
-            let mut offset = snos_output::HEADER_SIZE;
-
-            // TODO(#7): We should update SNOS output to have the messages count
-            // instead of the messages segment len.
-
-            let mut messages_segments = program_output.slice(offset, program_output.len() - offset);
-
-            let (messages_to_starknet, messages_to_appchain) =
-                output_process::gather_messages_from_output(
-                messages_segments
-            );
-
-            self.messaging.process_messages_to_starknet(messages_to_starknet);
-            self.messaging.process_messages_to_appchain(messages_to_appchain);
             self.reentrancy_guard.end();
 
             self
@@ -201,6 +172,6 @@ mod appchain {
                         block_hash: self.state.block_hash.read(),
                     }
                 );
-        }
+        }            
     }
 }
