@@ -11,7 +11,8 @@ mod errors {
 /// State component.
 #[starknet::component]
 mod state_cpt {
-    use piltover::snos_output::StarknetOsOutput;
+    use core::array::SpanTrait;
+use piltover::snos_output::StarknetOsOutput;
     use piltover::state::interface::IState;
     use super::errors;
 
@@ -35,19 +36,17 @@ mod state_cpt {
         TContractState, +HasComponent<TContractState>,
     > of IState<ComponentState<TContractState>> {
         fn update(ref self: ComponentState<TContractState>, program_output: Span<felt252>,){
-            let mut stripped_output = program_output.slice(1,program_output.len()/2);
-            let program_output: StarknetOsOutput = Serde::deserialize(ref stripped_output).unwrap();
-
+            
             // Check the blockNumber first as the error is less ambiguous then INVALID_PREVIOUS_ROOT.
             // self.block_number.write(self.block_number.read() + 1);
-            self.block_number.write(program_output.new_block_number);
+            self.block_number.write(*program_output.at(6));
             // assert(
             //     self.block_number.read() == program_output.block_number,
             //     errors::INVALID_BLOCK_NUMBER
             // );
 
             // self.block_hash.write(program_output.block_hash);
-            self.block_hash.write(program_output.new_block_hash);
+            self.block_hash.write(*program_output.at(8));
 
             // assert(
             //     self.state_root.read() == program_output.prev_state_root,
@@ -55,7 +54,7 @@ mod state_cpt {
             // );
 
             // self.state_root.write(program_output.new_state_root);
-            self.state_root.write(program_output.final_root);
+            self.state_root.write(*program_output.at(4));
         }
 
         fn get_state(self: @ComponentState<TContractState>) -> (StateRoot, BlockNumber, BlockHash) {

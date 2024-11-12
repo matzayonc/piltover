@@ -15,9 +15,16 @@ trait IAppchain<T> {
     /// TODO: DA + facts.
     fn update_state(
         ref self: T,
-        program_output: Span<felt252>,
+        snos_output: Span<felt252>,
+        bridge_output: Span<felt252>,
         onchain_data_hash: felt252,
         onchain_data_size: u256
     );
+    fn get_fact(
+        self: @T,
+    ) -> felt252;
+    fn get_length(
+        self: @T,
+    ) -> felt252;
 }
 

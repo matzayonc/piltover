@@ -45,10 +45,10 @@ mod state {
     use interface::{IState, IStateDispatcher, IStateDispatcherTrait};
     use mock::state_mock;
 
-    // #[cfg(test)]
-    // mod tests {
-    //     mod test_state;
-    // }
+    #[cfg(test)]
+    mod tests {
+        mod test_state;
+    }
 }
 mod components {
     mod onchain_data_fact_tree_encoder;

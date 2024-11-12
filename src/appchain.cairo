@@ -13,7 +13,8 @@ mod errors {
 /// Appchain settlement contract on starknet.
 #[starknet::contract]
 mod appchain {
-    use openzeppelin::access::ownable::{
+    use core::array::ArrayTrait;
+use openzeppelin::access::ownable::{
         OwnableComponent as ownable_cpt, OwnableComponent::InternalTrait as OwnableInternal,
         interface::IOwnable
     };
@@ -38,7 +39,6 @@ mod appchain {
     use core::poseidon::{Poseidon, PoseidonImpl, HashStateImpl, poseidon_hash_span};
     use starknet::ContractAddress;
     use super::errors;
-
 
     /// The default cancellation delay of 5 days.
     const CANCELLATION_DELAY_SECS: u64 = 432000;
@@ -70,6 +70,8 @@ mod appchain {
         reentrancy_guard: ReentrancyGuardComponent::Storage,
         #[substorage(v0)]
         state: state_cpt::Storage,
+        fact: felt252,
+        info_length: felt252,
     }
 
     #[event]
@@ -124,14 +126,18 @@ mod appchain {
     impl Appchain of IAppchain<ContractState> {
         fn update_state(
             ref self: ContractState,
-            mut program_output: Span<felt252>,
+            mut snos_output: Span<felt252>,
+            mut bridge_output: Span<felt252>,
             onchain_data_hash: felt252,
             onchain_data_size: u256
         ) {
+            
             self.reentrancy_guard.start();
             self.config.assert_only_owner_or_operator();
-
-            let output_hash = poseidon_hash_span(program_output);
+            let snos_output_hash = poseidon_hash_span(snos_output);
+            let snos_output_hash_in_bridge_output = bridge_output.at(4);
+            assert!(snos_output_hash==*snos_output_hash_in_bridge_output);
+            let output_hash = poseidon_hash_span(bridge_output);
 
             let (current_program_hash, _): (felt252, felt252) = self
                 .config
@@ -142,25 +148,19 @@ mod appchain {
                 onchain_data_hash, onchain_data_size
             };
             let state_transition_fact: u256 = encode_fact_with_onchain_data(
-                program_output, data_availability_fact
+                bridge_output, data_availability_fact
             );
-
-            let mut stripped_output = program_output.slice(1,program_output.len()/2);
-            let program_output_struct: StarknetOsOutput = Serde::deserialize(ref stripped_output)
-                .unwrap();
 
             let fact = poseidon_hash_span(array![current_program_hash, output_hash].span());
-
-            assert(
-                IFactRegistryDispatcher { contract_address: self.config.get_facts_registry() }
-                    .is_valid(fact),
-                errors::NO_STATE_TRANSITION_PROOF
-            );
+            self.fact.write(fact);
+            
+            assert!(*IFactRegistryDispatcher { contract_address: self.config.get_facts_registry() }
+            .get_all_verifications_for_fact_hash(fact).at(0).security_bits>50);
 
             self.emit(LogStateTransitionFact { state_transition_fact });
 
             // Perform state update
-            self.state.update(program_output);
+            self.state.update(snos_output);
 
             self.reentrancy_guard.end();
 
@@ -173,5 +173,12 @@ mod appchain {
                     }
                 );
         }            
+        fn get_fact(self: @ContractState ) -> felt252 {
+            return self.fact.read();
+        }
+        fn get_length(self: @ContractState ) -> felt252 {
+            return self.info_length.read();
+        }
     }
+
 }
